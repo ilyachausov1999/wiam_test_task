@@ -4,25 +4,23 @@ declare(strict_types=1);
 
 namespace app\controllers;
 
-use app\services\RequestCreator;
+use app\models\LoanRequestForm;
+use app\services\LoanService;
+use Exception;
 use Yii;
-use yii\db\Exception as DbException;
 use yii\rest\Controller;
 use yii\web\Response;
-use yii\web\BadRequestHttpException;
 
 /**
  * RequestController
- *
- * Creates new request
  */
 class RequestController extends Controller
 {
-    private RequestCreator $requestCreator;
+    private LoanService $loanService;
 
-    public function __construct($id, $module, RequestCreator $requestCreator, array $config = [])
+    public function __construct($id, $module, LoanService $loanService, array $config = [])
     {
-        $this->requestCreator = $requestCreator;
+        $this->loanService = $loanService;
         parent::__construct($id, $module, $config);
     }
 
@@ -39,14 +37,12 @@ class RequestController extends Controller
     }
 
     /**
-     * Create a new request by handling request POST /requests
      *
      * @return array
-     * @throws BadRequestHttpException
      *
      * @SWG\Post(
      *     path="/requests",
-     *     summary="Create new request",
+     *     summary="Создать новый запрос",
      *     tags={"Requests"},
      *     @SWG\Parameter(
      *         name="body",
@@ -64,13 +60,13 @@ class RequestController extends Controller
      *             @SWG\Property(
      *                 property="amount",
      *                 type="integer",
-     *                 description="Amount of money",
+     *                 description="Сумма займа",
      *                 example=3000
      *             ),
      *             @SWG\Property(
      *                 property="term",
      *                 type="integer",
-     *                 description="Credit request period in days",
+     *                 description="Срок займа",
      *                 example=30
      *             )
      *         )
@@ -92,44 +88,51 @@ class RequestController extends Controller
      *             @SWG\Property(property="result", type="boolean", example=false),
      *             @SWG\Property(property="error", type="string", example="User Id is invalid.")
      *         )
+     *     ),
+     *     @SWG\Response(
+     *         response=500,
+     *         description="Incorrect input data",
+     *         @SWG\Schema(
+     *             type="object",
+     *             @SWG\Property(property="result", type="boolean", example=false),
+     *             @SWG\Property(property="error", type="string", example="Loan creation error.")
+     *         )
      *     )
      * )
      */
     public function actionCreate(): array
     {
-        $payload = Yii::$app->request->post();
+        $request = Yii::$app->request->post();
+        $validator = new LoanRequestForm();
+        $validator->load($request, '');
 
-        if (empty($payload)) {
-            throw new BadRequestHttpException('Empty POST payload');
+        if (!$validator->validateData()) {
+            Yii::$app->response->statusCode = 400;
+            return [
+                'result' => false,
+                'errors' => $validator->getErrorsAsArray(),
+            ];
         }
 
         try {
-            $result = $this->requestCreator->createRequest($payload);
-            if ($result['success']) {
-                // Set HTTP status 201 (Created)
+            $dto = $validator->getDto();
+            $loanResult = $this->loanService->createLoanRequest($dto);
+
+            if ($loanResult->isSuccess()) {
                 Yii::$app->response->statusCode = 201;
                 return [
-                    'result' => true,
-                    'id' => $result['request']->id,
-                ];
-            } else {
-                // Set HTTP status 500 (Internal Server Error)
-                Yii::$app->response->statusCode = 500;
-                return [
-                    'result' => false,
-                    'error' => $result['request']->hasErrors() ? $result['request']->errors[array_key_first($result['request']->errors)][0] : 'Unknown error',
+                    'result' => $loanResult->isSuccess(),
+                    'id' => $loanResult->getResult()->id,
                 ];
             }
-        } catch (DbException $e) {
-            Yii::info("DB error: [{$e->getCode()}] {$e->getMessage()}");
 
-            // Set HTTP status 500 (Internal Server Error)
+            Yii::$app->response->statusCode = 400;
+            return ['result' => false];
+
+        } catch (Exception $e) {
+            Yii::error("Loan creation error: " . $e->getMessage());
             Yii::$app->response->statusCode = 500;
-
-            return [
-                'result' => false,
-                'error' => YII_DEBUG ? $e->getMessage() : 'Check logs for details',
-            ];
+            return ['result' => false];
         }
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace app\controllers;
 
+use app\services\LoanProcessorService;
 use InvalidArgumentException;
 use Throwable;
 use Yii;
@@ -12,40 +13,33 @@ use yii\rest\Controller;
 use yii\web\Response;
 use yii\web\BadRequestHttpException;
 use yii\filters\ContentNegotiator;
-use app\services\RequestQueue;
 use yii\web\ServerErrorHttpException;
 
 /**
  * ProcessorController
  *
- * Processes all requests in PENDING status, making a decision: Approve or Decline.
+ * Обрабатывает все запросы в состоянии STATUS_PENDING, принимая решение: одобрить или отклонить.
  */
 class ProcessorController extends Controller
 {
     /**
-     * Request processing service
-     *
-     * @var RequestQueue
+     * @var LoanProcessorService
      */
-    private RequestQueue $requestQueue;
+    private LoanProcessorService $processorService;
 
     /**
-     * ProcessorController constructor
-     *
      * @param string $id
      * @param Module $module
-     * @param RequestQueue $requestQueue
+     * @param LoanProcessorService $processorService
      * @param array $config
      */
-    public function __construct($id, $module, RequestQueue $requestQueue, array $config = [])
+    public function __construct($id, $module, LoanProcessorService $processorService, array $config = [])
     {
-        $this->requestQueue = $requestQueue;
+        $this->processorService = $processorService;
         parent::__construct($id, $module, $config);
     }
 
     /**
-     * Configuring behavior to return JSON responses
-     *
      * @return array
      */
     public function behaviors(): array
@@ -61,7 +55,7 @@ class ProcessorController extends Controller
     }
 
     /**
-     * Processing of all requests with PENDING status
+     * Обработка всех запросов со статусом "STATUS_PENDING"
      *
      * @param int $delay
      * @return array
@@ -69,13 +63,13 @@ class ProcessorController extends Controller
      *
      * @SWG\Get(
      *     path="/processor",
-     *     summary="Process all pending requests",
+     *     summary="Обработка ожидающих запросов",
      *     tags={"Processor"},
      *     @SWG\Parameter(
      *         name="delay",
      *         in="query",
      *         type="integer",
-     *         description="Delay in seconds before each request is processed",
+     *         description="Delay in seconds",
      *         required=false,
      *         default=0,
      *         example=5
@@ -111,7 +105,8 @@ class ProcessorController extends Controller
     public function actionHandle(int $delay = 0): array
     {
         try {
-            $this->requestQueue->processAllPendingRequests($delay);
+            $result = $this->processorService->processPendingRequests($delay);
+            return ['result' => $result];
         } catch (InvalidArgumentException $e) {
             Yii::error("Invalid Argument: " . $e->getMessage());
             throw new BadRequestHttpException($e->getMessage());
@@ -119,9 +114,5 @@ class ProcessorController extends Controller
             Yii::error("Processing Error: " . $e->getMessage());
             throw new ServerErrorHttpException($e->getMessage());
         }
-
-        return [
-            'result' => true,
-        ];
     }
 }

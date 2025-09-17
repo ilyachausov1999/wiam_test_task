@@ -28,13 +28,7 @@ $config = [
         'db' => $db,
     ],
     'params' => $params,
-    /*
-    'controllerMap' => [
-        'fixture' => [ // Fixture generation command line.
-            'class' => 'yii\faker\FixtureController',
-        ],
-    ],
-    */
+    'container' => require __DIR__ . '/container.php',
 ];
 
 if (YII_ENV_DEV) {
